@@ -1,107 +1,6 @@
 import os
 import re
 import subprocess
-from typing import Optional, Set
-
-from mutagen import File as MutagenFile
-from soundcloud import SoundCloud
-
-
-def _extract_sc_url_from_tags(filepath: str) -> Optional[str]:
-    try:
-        audio = MutagenFile(filepath)
-        if not audio or not getattr(audio, "tags", None):
-            return None
-
-        tags = audio.tags
-
-        # ID3 (MP3/WAV/AIFF): WOAF frame
-        if "WOAF" in tags:
-            try:
-                frame = tags.get("WOAF")
-                if frame and getattr(frame, "url", None):
-                    return str(frame.url)
-            except Exception:
-                pass
-
-        # MP4/M4A: '----:com.apple.iTunes:WWWAUDIOFILE'
-        mp4_key = "----:com.apple.iTunes:WWWAUDIOFILE"
-        if mp4_key in tags:
-            try:
-                val = tags.get(mp4_key)
-                # mutagen mp4 stores freeform as list of bytes
-                if isinstance(val, list) and val:
-                    return val[0].decode("utf-8", errors="ignore")
-            except Exception:
-                pass
-
-        # Vorbis/Opus/FLAC: 'WWWAUDIOFILE'
-        if "WWWAUDIOFILE" in tags:
-            try:
-                v = tags.get("WWWAUDIOFILE")
-                if isinstance(v, list) and v:
-                    return str(v[0])
-                if isinstance(v, str):
-                    return v
-            except Exception:
-                pass
-    except Exception:
-        return None
-    return None
-
-
-def _prefill_archive_from_folder(username: str, archive_file: str) -> None:
-    exts = {".mp3", ".m4a", ".opus", ".flac", ".wav"}
-    folder = username
-    if not os.path.isdir(folder):
-        return
-
-    # Load existing IDs from archive
-    existing_ids: Set[str] = set()
-    if os.path.exists(archive_file):
-        try:
-            with open(archive_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    s = line.strip()
-                    if s.isdigit():
-                        existing_ids.add(s)
-        except OSError:
-            pass
-
-    client = SoundCloud(None, None)
-
-    discovered: Set[str] = set()
-    for name in os.listdir(folder):
-        full = os.path.join(folder, name)
-        if not os.path.isfile(full):
-            continue
-        _, ext = os.path.splitext(name)
-        if ext.lower() not in exts:
-            continue
-
-        url = _extract_sc_url_from_tags(full)
-        if not url or "soundcloud.com" not in url:
-            continue
-
-        try:
-            item = client.resolve(url)
-            track_id = getattr(item, "id", None)
-            if track_id:
-                discovered.add(str(track_id))
-        except Exception:
-            # skip resolving errors silently
-            continue
-
-    # Merge and write back
-    all_ids = sorted(existing_ids.union(discovered), key=lambda x: int(x))
-    if all_ids:
-        try:
-            os.makedirs(os.path.dirname(archive_file), exist_ok=True)
-            with open(archive_file, "w", encoding="utf-8") as f:
-                for tid in all_ids:
-                    f.write(tid + "\n")
-        except OSError:
-            pass
 
 
 def download_recent_tracks(user_url, num_tracks=33):
@@ -121,24 +20,28 @@ def download_recent_tracks(user_url, num_tracks=33):
         # Build the scdl command to fetch liked tracks
         archive_file = os.path.join(username, "downloaded_liked_tracks.txt")
 
-        # Prefill archive with IDs from already existing local files
-        print(
-            "Предзаполнение архива скачанных треков по существующим файлам...")
-        _prefill_archive_from_folder(username, archive_file)
+        # Fast path: не делаем сетевые запросы перед стартом.
+        # Создадим файл архива, если его нет (scdl сам будет его пополнять для новых треков).
+        os.makedirs(username, exist_ok=True)
+        if not os.path.exists(archive_file):
+            try:
+                with open(archive_file, "a", encoding="utf-8"):
+                    pass
+            except OSError:
+                pass
         command = [
             "scdl",
             "-l", user_url,
             "-f",  # likes (favorites)
+            "-c",  # continue if file exists (skip by filename)
             "--onlymp3",  # force mp3 output
             "--no-original",  # avoid downloading original files like m4a
-            "--download-archive", archive_file,
-            # skip already-downloaded by track id
+            "--download-archive", archive_file,  # skip already-downloaded by track id
             "--path", username,  # saving directory
             # "--name-format", "%(title)s"  # by default format is sc track ID
         ]
 
         print(f"Constructed scdl command: {' '.join(command)}")
-
         # Pre-run counts
         before_mp3 = sum(1 for f in os.listdir(username) if
                          f.lower().endswith(".mp3")) if os.path.exists(
