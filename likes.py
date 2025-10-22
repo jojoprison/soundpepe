@@ -21,6 +21,8 @@ def download_recent_tracks(user_url, num_tracks=33):
             "scdl",
             "-l", user_url,
             "-f",  # likes (favorites)
+            "--onlymp3",  # force mp3 output
+            "--no-original",  # avoid downloading original files like m4a
             "-n", str(num_tracks),
             # "--download-archive", os.path.join(username, "downloaded_liked_tracks.txt"),
             "--path", username,  # saving directory
@@ -48,5 +50,5 @@ def download_recent_tracks(user_url, num_tracks=33):
 
 if __name__ == "__main__":
     # URL of the user's profile
-    user_profile_url = "https://soundcloud.com/supadupafla"
-    download_recent_tracks(user_profile_url, num_tracks=33)
+    user_profile_url = "https://soundcloud.com/up_to_u"
+    download_recent_tracks(user_profile_url, num_tracks=299)
