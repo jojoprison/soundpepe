@@ -3,7 +3,7 @@ import re
 import subprocess
 
 
-def download_recent_tracks(user_url, num_tracks=33):
+def download_recent_tracks(user_url, num_tracks=33, max_likes_to_check=None):
     try:
         # Fetch the username from the URL
         print(f"Extracting username from URL: {user_url}")
@@ -36,7 +36,8 @@ def download_recent_tracks(user_url, num_tracks=33):
             "-c",  # continue if file exists (skip by filename)
             "--onlymp3",  # force mp3 output
             "--no-original",  # avoid downloading original files like m4a
-            "--download-archive", archive_file,  # skip already-downloaded by track id
+            "--download-archive", archive_file,
+            # skip already-downloaded by track id
             "--path", username,  # saving directory
             # "--name-format", "%(title)s"  # by default format is sc track ID
         ]
@@ -58,6 +59,12 @@ def download_recent_tracks(user_url, num_tracks=33):
         like_total = None
         new_downloads = 0
         skipped_existing = 0
+        # Буфер и счётчики для аккуратного лога/остановки
+        current_title = None
+        current_like_pos = None  # номер текущего лайка по логам scdl
+        processed_total = 0
+        processed_first_window = 0
+        new_first_window = 0
 
         pat_like_total = re.compile(r"like n°(\d+) of (\d+)")
         pat_downloading = re.compile(r"Downloading (.+)")
@@ -84,24 +91,66 @@ def download_recent_tracks(user_url, num_tracks=33):
                         continue
 
                     m_tot = pat_like_total.search(line)
-                    if m_tot and like_total is None:
-                        like_total = int(m_tot.group(2))
-                        print(f"Всего лайков у пользователя: {like_total}")
+                    if m_tot:
+                        # Обновляем позицию текущего лайка
+                        try:
+                            current_like_pos = int(m_tot.group(1))
+                        except Exception:
+                            current_like_pos = None
+                        if like_total is None:
+                            like_total = int(m_tot.group(2))
+                            print(f"Всего лайков у пользователя: {like_total}")
 
                     m_dl = pat_downloading.search(line)
                     if m_dl:
+                        # Буферизуем название, но не печатаем "Скачиваю"
                         current_title = m_dl.group(1)
-                        print(
-                            f"Скачиваю: {current_title} (новых {new_downloads}/{num_tracks})")
 
-                    if pat_skipped.search(line):
+                    m_sk = pat_skipped.search(line)
+                    if m_sk:
                         skipped_existing += 1
+                        processed_total += 1
+                        # Выводим компактно
+                        title_to_show = current_title or m_sk.group(1)
+                        print(f"Пропускаю: {title_to_show}")
 
-                    if pat_downloaded.search(line):
+                        # Если это в окне первых num_tracks лайков — учитываем окно
+                        if current_like_pos is not None and int(
+                                num_tracks) > 0 and current_like_pos <= int(
+                                num_tracks):
+                            processed_first_window += 1
+
+                        # Если проверили достаточно лайков — останавливаемся
+                        if max_likes_to_check is not None and processed_total >= int(
+                                max_likes_to_check):
+                            print(
+                                f"Достигнут лимит просмотра {max_likes_to_check} лайков. Останавливаю...")
+                            proc.terminate()
+                            break
+
+                    m_dn = pat_downloaded.search(line)
+                    if m_dn:
                         new_downloads += 1
-                        print(f"Готово: {new_downloads}/{num_tracks}")
+                        processed_total += 1
+                        title_to_show = current_title or m_dn.group(1)
+                        print(
+                            f"Скачано: {title_to_show} (новых {new_downloads}/{num_tracks})")
 
-                    # Stop after reaching requested number of new downloads
+                        if current_like_pos is not None and int(
+                                num_tracks) > 0 and current_like_pos <= int(
+                                num_tracks):
+                            processed_first_window += 1
+                            new_first_window += 1
+
+                    # Ранний выход: первые num_tracks все уже были скачаны
+                    if int(num_tracks) > 0 and processed_first_window >= int(
+                            num_tracks) and new_first_window == 0:
+                        print(
+                            f"Крайние {num_tracks} лайков уже скачаны — останавливаю...")
+                        proc.terminate()
+                        break
+
+                    # Стандартная остановка по лимиту новых загрузок
                     if num_tracks and new_downloads >= int(num_tracks):
                         print("Достигнут лимит новых загрузок. Останавливаю...")
                         proc.terminate()
