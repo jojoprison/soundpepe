@@ -117,7 +117,7 @@ def download_recent_tracks(user_url, num_tracks=33, max_likes_to_check=None):
                         # Если это в окне первых num_tracks лайков — учитываем окно
                         if current_like_pos is not None and int(
                                 num_tracks) > 0 and current_like_pos <= int(
-                                num_tracks):
+                            num_tracks):
                             processed_first_window += 1
 
                         # Если проверили достаточно лайков — останавливаемся
@@ -138,7 +138,7 @@ def download_recent_tracks(user_url, num_tracks=33, max_likes_to_check=None):
 
                         if current_like_pos is not None and int(
                                 num_tracks) > 0 and current_like_pos <= int(
-                                num_tracks):
+                            num_tracks):
                             processed_first_window += 1
                             new_first_window += 1
 
@@ -192,4 +192,7 @@ def download_recent_tracks(user_url, num_tracks=33, max_likes_to_check=None):
 if __name__ == "__main__":
     # URL of the user's profile
     user_profile_url = "https://soundcloud.com/up_to_u"
-    download_recent_tracks(user_profile_url, num_tracks=299, max_likes_to_check=299)
+    download_recent_tracks(
+        user_profile_url, num_tracks=299,
+        max_likes_to_check=299
+    )
