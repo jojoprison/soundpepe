@@ -192,4 +192,4 @@ def download_recent_tracks(user_url, num_tracks=33, max_likes_to_check=None):
 if __name__ == "__main__":
     # URL of the user's profile
     user_profile_url = "https://soundcloud.com/up_to_u"
-    download_recent_tracks(user_profile_url, num_tracks=299)
+    download_recent_tracks(user_profile_url, num_tracks=299, max_likes_to_check=299)
